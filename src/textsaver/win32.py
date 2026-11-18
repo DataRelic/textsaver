@@ -8,27 +8,45 @@ from ctypes import wintypes
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
-WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 MONITORENUMPROC = ctypes.WINFUNCTYPE(
     wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.LPARAM
 )
 
-user32.SetProcessDpiAwarenessContext.argtypes = [wintypes.HANDLE]
-user32.EnumWindows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
-user32.EnumDisplayMonitors.argtypes = [wintypes.HDC, ctypes.c_void_p, MONITORENUMPROC, wintypes.LPARAM]
-user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-user32.IsWindowVisible.argtypes = [wintypes.HWND]
-user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND] + [ctypes.c_int] * 4 + [wintypes.UINT]
-user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
-kernel32.CreateMutexW.restype = wintypes.HANDLE
-
-WT_WINDOW_CLASS = "CASCADIA_HOSTING_WINDOW_CLASS"
-
 
 class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+class COORD(ctypes.Structure):
+    _fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+
+class CONSOLE_FONT_INFOEX(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.ULONG),
+        ("nFont", wintypes.DWORD),
+        ("dwFontSize", COORD),
+        ("FontFamily", wintypes.UINT),
+        ("FontWeight", wintypes.UINT),
+        ("FaceName", wintypes.WCHAR * 32),
+    ]
+
+
+user32.SetProcessDpiAwarenessContext.argtypes = [wintypes.HANDLE]
+user32.EnumDisplayMonitors.argtypes = [wintypes.HDC, ctypes.c_void_p, MONITORENUMPROC, wintypes.LPARAM]
+user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND] + [ctypes.c_int] * 4 + [wintypes.UINT]
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+user32.ShowScrollBar.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.BOOL]
+user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.GetDpiForWindow.argtypes = [wintypes.HWND]
+kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.CreateMutexW.restype = wintypes.HANDLE
+kernel32.GetStdHandle.restype = wintypes.HANDLE
+kernel32.GetConsoleWindow.restype = wintypes.HWND
+kernel32.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+kernel32.SetConsoleMode.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+kernel32.SetCurrentConsoleFontEx.argtypes = [wintypes.HANDLE, wintypes.BOOL, ctypes.POINTER(CONSOLE_FONT_INFOEX)]
+kernel32.SetConsoleDisplayMode.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(COORD)]
 
 
 def set_dpi_aware():
@@ -57,6 +75,31 @@ def monitors():
     return rects
 
 
+def fullscreen_console(monitor, face="Consolas", points=18):
+    """Turn this process's classic console window into a fullscreen terminal on `monitor`."""
+    out = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+    mode = wintypes.DWORD()
+    kernel32.GetConsoleMode(out, ctypes.byref(mode))
+    kernel32.SetConsoleMode(out, mode.value | 0x4)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+
+    hwnd = kernel32.GetConsoleWindow()
+    # Fullscreen happens on whichever monitor holds the window, so move it there first.
+    # HWND_TOPMOST keeps it above the taskbar; SWP_NOSIZE.
+    user32.SetWindowPos(hwnd, wintypes.HWND(-1), monitor[0] + 50, monitor[1] + 50, 0, 0, 0x1)
+    # Consolas draws block characters edge to edge here; Cascadia leaves seams between cells.
+    height = round(points * user32.GetDpiForWindow(hwnd) / 72)
+    font = CONSOLE_FONT_INFOEX(ctypes.sizeof(CONSOLE_FONT_INFOEX), 0, COORD(0, height), 54, 400, face)
+    kernel32.SetCurrentConsoleFontEx(out, False, ctypes.byref(font))
+    kernel32.SetConsoleDisplayMode(out, 1, None)  # CONSOLE_FULLSCREEN_MODE
+    user32.ShowWindow(hwnd, 5)  # SW_SHOW: the window is started hidden
+    user32.SetForegroundWindow(hwnd)
+
+
+def hide_scrollbar():
+    # The console brings its scrollbar back whenever the screen buffer changes.
+    user32.ShowScrollBar(kernel32.GetConsoleWindow(), 3, False)  # SB_BOTH
+
+
 def last_input_tick():
     info = LASTINPUTINFO(ctypes.sizeof(LASTINPUTINFO))
     user32.GetLastInputInfo(ctypes.byref(info))
@@ -77,33 +120,6 @@ def park_cursor():
     x = user32.GetSystemMetrics(0) - 4  # SM_CXSCREEN
     y = user32.GetSystemMetrics(1) - 4  # SM_CYSCREEN
     user32.SetCursorPos(x, y)
-
-
-def find_windows(class_name, title):
-    found = []
-    buf = ctypes.create_unicode_buffer(256)
-
-    def callback(hwnd, _lparam):
-        if user32.IsWindowVisible(hwnd):
-            user32.GetClassNameW(hwnd, buf, 256)
-            if buf.value == class_name:
-                user32.GetWindowTextW(hwnd, buf, 256)
-                if buf.value == title:
-                    found.append(hwnd)
-        return True
-
-    user32.EnumWindows(WNDENUMPROC(callback), 0)
-    return found
-
-
-def make_topmost(hwnd):
-    # HWND_TOPMOST, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
-    user32.SetWindowPos(hwnd, wintypes.HWND(-1), 0, 0, 0, 0, 0x1 | 0x2 | 0x10)
-
-
-def foreground(hwnd):
-    # Only succeeds if Windows lets this process take the foreground; best effort.
-    return bool(user32.SetForegroundWindow(hwnd))
 
 
 class InputWatch:
