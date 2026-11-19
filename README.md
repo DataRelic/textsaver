@@ -14,6 +14,8 @@ It installs as a regular Windows screensaver, so Windows handles the idle timer 
 
 ![a random effect](assets/screenshots/random.png)
 
+The included effects are shown in the [terminaltexteffects showroom](https://chrisbuilds.github.io/terminaltexteffects/showroom/).
+
 ## Requirements
 
 - Windows 10 or 11
