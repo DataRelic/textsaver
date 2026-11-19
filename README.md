@@ -48,7 +48,8 @@ textsaver text Hi --font slant  # use another figlet font
 A new install shows the word `textsaver`. Replace it with `textsaver text`. The text is stored in
 `%LOCALAPPDATA%\textsaver\screensaver.txt`. Edit that file by hand for multi-line or custom art, or
 use the Settings button in Screen Saver Settings, which opens the same file. Short words work best:
-text wider than the screen is clipped.
+they are shown at full size, while longer text gets a smaller font so that it fits. Text too wide
+for even the smallest font is clipped.
 
 `uvx pyfiglet --list_fonts` lists the available fonts. The default, `delta_corps_priest_1`, is the
 one Omarchy's logo uses.
@@ -62,6 +63,20 @@ Windows starts screensavers on a separate, empty desktop, where Windows Terminal
 window: a screensaver built on it works when started by hand but shows a black screen when Windows
 triggers it. textsaver therefore uses the classic Windows console (`conhost.exe`), one fullscreen
 window per monitor, with Consolas as the font because it draws block characters without gaps.
+
+The classic console draws slowly, and slowest when an effect repaints the whole screen. Two things
+keep the effects moving:
+
+- The font is large: 36 pt, or smaller (down to 18 pt) when the text would not fit the monitor.
+  Fewer, larger cells are much cheaper to draw.
+- The animations run on the clock at 120 steps per second, and only the frames the console has time
+  for are drawn.
+
+Each effect plays to its end and holds the screen for roughly 5 to 15 seconds. One that finishes
+early leaves the text up until its 5 seconds are over; one still running after 15 seconds is hurried
+to its finish. Matrix and swarm run with shorter settings than tte's defaults, because they would
+otherwise take far longer. An effect that fails or hangs is cleared, and the next one starts. These
+numbers and settings are at the top of `src/textsaver/cli.py`.
 
 ## Update
 

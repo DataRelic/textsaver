@@ -46,6 +46,7 @@ kernel32.GetConsoleWindow.restype = wintypes.HWND
 kernel32.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
 kernel32.SetConsoleMode.argtypes = [wintypes.HANDLE, wintypes.DWORD]
 kernel32.SetCurrentConsoleFontEx.argtypes = [wintypes.HANDLE, wintypes.BOOL, ctypes.POINTER(CONSOLE_FONT_INFOEX)]
+kernel32.GetCurrentConsoleFontEx.argtypes = [wintypes.HANDLE, wintypes.BOOL, ctypes.POINTER(CONSOLE_FONT_INFOEX)]
 kernel32.SetConsoleDisplayMode.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(COORD)]
 
 
@@ -75,8 +76,31 @@ def monitors():
     return rects
 
 
-def fullscreen_console(monitor, face="Consolas", points=18):
-    """Turn this process's classic console window into a fullscreen terminal on `monitor`."""
+def fit_font(out, width, height, columns, rows, face, tallest, smallest):
+    """Set the console font `tallest` px high, or smaller if `columns` x `rows` cells need that to fit.
+
+    `width` and `height` are the screen's pixels. The font never goes below `smallest` px.
+    """
+    size = tallest
+    while True:
+        font = CONSOLE_FONT_INFOEX(ctypes.sizeof(CONSOLE_FONT_INFOEX), 0, COORD(0, size), 54, 400, face)
+        kernel32.SetCurrentConsoleFontEx(out, False, ctypes.byref(font))
+        kernel32.GetCurrentConsoleFontEx(out, False, ctypes.byref(font))  # The cell size it really got.
+        cell = font.dwFontSize
+        if size <= smallest or not cell.X or not cell.Y:
+            return
+        fit = min(width / (cell.X * columns), height / (cell.Y * rows))
+        if fit >= 1:
+            return
+        size = max(smallest, min(size - 1, int(size * fit)))
+
+
+def fullscreen_console(monitor, columns, rows, face="Consolas", points=36, smallest=18):
+    """Turn this process's classic console window into a fullscreen terminal on `monitor`.
+
+    The font is `points` high, or smaller (down to `smallest`) when text of `columns` x `rows`
+    cells would not fit. Fewer, larger cells are what keep the full-screen effects fluid.
+    """
     out = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
     mode = wintypes.DWORD()
     kernel32.GetConsoleMode(out, ctypes.byref(mode))
@@ -87,9 +111,9 @@ def fullscreen_console(monitor, face="Consolas", points=18):
     # HWND_TOPMOST keeps it above the taskbar; SWP_NOSIZE.
     user32.SetWindowPos(hwnd, wintypes.HWND(-1), monitor[0] + 50, monitor[1] + 50, 0, 0, 0x1)
     # Consolas draws block characters edge to edge here; Cascadia leaves seams between cells.
-    height = round(points * user32.GetDpiForWindow(hwnd) / 72)
-    font = CONSOLE_FONT_INFOEX(ctypes.sizeof(CONSOLE_FONT_INFOEX), 0, COORD(0, height), 54, 400, face)
-    kernel32.SetCurrentConsoleFontEx(out, False, ctypes.byref(font))
+    left, top, right, bottom = monitor
+    scale = user32.GetDpiForWindow(hwnd) / 72
+    fit_font(out, right - left, bottom - top, columns, rows, face, round(points * scale), round(smallest * scale))
     kernel32.SetConsoleDisplayMode(out, 1, None)  # CONSOLE_FULLSCREEN_MODE
     user32.ShowWindow(hwnd, 5)  # SW_SHOW: the window is started hidden
     user32.SetForegroundWindow(hwnd)
