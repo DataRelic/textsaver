@@ -8,6 +8,12 @@ effects in a fullscreen console window on every monitor. Any key, click or mouse
 
 It installs as a regular Windows screensaver, so Windows handles the idle timer and the lock on resume.
 
+## Screenshots
+
+![fireworks](assets/screenshots/fireworks.png)
+
+![a random effect](assets/screenshots/random.png)
+
 ## Requirements
 
 - Windows 10 or 11
@@ -37,9 +43,10 @@ textsaver text Hello            # change the text
 textsaver text Hi --font slant  # use another figlet font
 ```
 
-The text is stored in `%LOCALAPPDATA%\textsaver\screensaver.txt`. Edit it by hand for multi-line or
-custom art, or use the Settings button in Screen Saver Settings, which opens the same file. Short
-words work best: text wider than the screen is clipped.
+A new install shows the word `textsaver`. Replace it with `textsaver text`. The text is stored in
+`%LOCALAPPDATA%\textsaver\screensaver.txt`. Edit that file by hand for multi-line or custom art, or
+use the Settings button in Screen Saver Settings, which opens the same file. Short words work best:
+text wider than the screen is clipped.
 
 `uvx pyfiglet --list_fonts` lists the available fonts. The default, `delta_corps_priest_1`, is the
 one Omarchy's logo uses.
