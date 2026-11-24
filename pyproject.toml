@@ -1,13 +1,27 @@
 [project]
 name = "textsaver"
 version = "0.1.0"
-description = "Omarchy-style terminal text-effect screensaver for Windows Terminal"
+description = "Omarchy-style text-effect screensaver for Windows"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "DataRelic" }]
 requires-python = ">=3.11"
+keywords = ["screensaver", "windows", "terminal", "ascii-art"]
+classifiers = [
+    "Environment :: Win32 (MS Windows)",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Programming Language :: Python :: 3",
+    "Topic :: Desktop Environment :: Screen Savers",
+]
 dependencies = [
     "pyfiglet>=1.0.4",
-    "terminaltexteffects>=0.15.0",
+    # Capped: cli.play() picks effects through terminaltexteffects.__main__, which is not public API.
+    "terminaltexteffects>=0.15.0,<0.16",
 ]
+
+[project.urls]
+Repository = "https://github.com/DataRelic/textsaver"
 
 [project.scripts]
 textsaver = "textsaver.cli:main"
@@ -16,5 +30,5 @@ textsaver = "textsaver.cli:main"
 textsaver-scr = "textsaver.cli:scr_main"
 
 [build-system]
-requires = ["uv_build>=0.9.2,<0.10"]
+requires = ["uv_build>=0.13.9,<0.14"]
 build-backend = "uv_build"
