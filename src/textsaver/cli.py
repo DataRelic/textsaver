@@ -58,14 +58,17 @@ def start():
     python = console_python()
     # Start hidden; each window shows itself once it is fullscreen on its monitor.
     hidden = subprocess.STARTUPINFO(dwFlags=subprocess.STARTF_USESHOWWINDOW, wShowWindow=subprocess.SW_HIDE)
-    for index in range(len(win32.monitors())):
+    windows = [
         subprocess.Popen(
             [str(conhost), str(python), "-m", "textsaver", "run", "--monitor", str(index)], startupinfo=hidden
         )
+        for index in range(len(win32.monitors()))
+    ]
 
-    # Windows counts the screensaver as running for as long as this process lives.
+    # Windows counts the screensaver as running for as long as this process lives, so stay until
+    # input arrives or no window is left: each conhost.exe lives exactly as long as its loop.
     watch = win32.InputWatch()
-    while not watch.triggered():
+    while not watch.triggered() and any(window.poll() is None for window in windows):
         time.sleep(0.1)
     return 0
 
@@ -209,14 +212,45 @@ def install():
     shutil.copy2(launcher, scr)
     print(f"Screensaver: {scr}")
     print("Pick a timeout in Screen Saver Settings and click OK.")
-    subprocess.run(["rundll32.exe", "desk.cpl,InstallScreenSaver", str(scr)])
+    # One command string, as Explorer's own Install command for .scr files passes it:
+    # InstallScreenSaver takes the rest of the line as the path and would keep quotes as part of it.
+    rundll32 = Path(os.environ["SystemRoot"]) / "System32" / "rundll32.exe"
+    subprocess.run(f"{rundll32} desk.cpl,InstallScreenSaver {scr}")
     return 0
 
 
+def deselect(scr):
+    """Clear Windows' screensaver selection if it is `scr`. True if it was."""
+    import winreg
+
+    try:
+        access = winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Control Panel\Desktop", access=access) as key:
+            selected = Path(str(winreg.QueryValueEx(key, "SCRNSAVE.EXE")[0]).strip('"'))
+            # Windows stores a short (8.3) path, so compare the files rather than the strings.
+            try:
+                ours = os.path.samefile(selected, scr)
+            except OSError:
+                # Ours is already gone. A selection that is gone too and has our name, long or short, was ours.
+                name = selected.name.lower()
+                ours = not selected.exists() and (name == scr.name or name.startswith("textsa~"))
+            if ours:
+                winreg.DeleteValue(key, "SCRNSAVE.EXE")
+            return ours
+    except (OSError, ValueError):  # Nothing is selected, or the setting cannot be read or changed.
+        return False
+
+
 def uninstall():
-    (state_dir() / "textsaver.scr").unlink(missing_ok=True)
+    scr = state_dir() / "textsaver.scr"
+    deselected = deselect(scr)  # Before the file goes: the comparison needs it.
+    scr.unlink(missing_ok=True)
     print("Removed the textsaver screensaver.")
-    print("Choose another screensaver in Screen Saver Settings (control desk.cpl,,@screensaver).")
+    if deselected:
+        print("Windows now has no screensaver selected.")
+        print("Choose another in Screen Saver Settings (control desk.cpl,,@screensaver).")
+    else:
+        print("It was not the selected screensaver, so that setting is unchanged.")
     return 0
 
 
